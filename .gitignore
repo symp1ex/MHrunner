@@ -1,0 +1,5 @@
+build/
+*.spec
+.venv/
+*.ini
+**/__pycache__

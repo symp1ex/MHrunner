@@ -13,7 +13,8 @@ DEFAULT_CONFIG = {
         'InstallerRoot': 'C:\\iiko_Distr', # Корневой каталог для ЛОКАЛЬНЫХ дистрибутивов
         'ConfigFileWaitTimeoutSec': '60',
         'ConfigFileCheckIntervalMs': '100',
-        'DebugLogging': 'False' # Включить подробное логирование в консоль и файл
+        'DebugLogging': 'False', # Включить подробное логирование в консоль и файл
+        'DefaultLogin': 'iikoUser'
     },
     # Определяем ПРИОРИТЕТ источников. Перечислять через запятую.
     # Скрипт будет проверять источники в указанном порядке.

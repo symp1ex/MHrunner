@@ -119,7 +119,7 @@ def step_parse_input(target_string):
     parsed_target = parse_target_string(target_string)
     if parsed_target is None or not parsed_target.get('UrlOrIp'):
         raise ValueError("Не удалось распарсить ввод или извлечь хост/IP.")
-    return {'parsed_target': parsed_target}
+    return {'parsed_target': parsed_target, 'config_protocol': parsed_target['Scheme']}
 
 def step_http_request(config, parsed_target):
     """Шаг 2: Выполнение HTTP-запроса."""
@@ -168,7 +168,7 @@ def step_http_request(config, parsed_target):
 
     logging.debug(f"Получен ответ от сервера: {server_info}")
 
-    return {'server_info': server_info, 'probe_url': probe_url, 'config_protocol': probe_scheme}
+    return {'server_info': server_info, 'probe_url': probe_url}
 
 
 def step_process_response(target_string, server_info):
