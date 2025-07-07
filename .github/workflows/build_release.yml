@@ -1,69 +1,51 @@
 # .github/workflows/build_release.yml
 name: Build and Release EXE
 
-# Запускать workflow при пуше тега, начинающегося с 'v'
 on:
   push:
     tags:
-      - 'v*' # Например, v1.0.0, v1.1.0-beta
+      - 'v*'
 
 jobs:
   build:
-    runs-on: windows-latest # Используем Windows Runner для сборки под Windows
+    runs-on: windows-latest
 
     steps:
       - name: Checkout code
-        # Клонируем репозиторий на виртуальную машину
         uses: actions/checkout@v4
 
       - name: Set up Python
-        # Устанавливаем Python 3.x (или укажите конкретную версию, например '3.10')
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 
       - name: Install dependencies
-        # Устанавливаем зависимости из requirements.txt
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Build with PyInstaller
-        # Собираем приложение в один исполняемый файл
-        # --onefile: Создать один исполняемый файл
-        # --windowed: Скрыть консольное окно при запуске
-        # --name: Установить имя выходного файла
-        # --icon: Установить иконку для исполняемого файла (путь относительно корня репозитория)
-        # config.ini НЕ включаем с помощью --add-data, т.к. он генерируется при первом запуске
         run: |
           pyinstaller --onefile --windowed --name "BackOfficeLauncher" --icon="icon.ico" main.py
 
       - name: Upload Build Artifact (for debugging)
-        # Этот шаг загружает собранный .exe как артефакт workflow Run.
-        # Это удобно для отладки, даже если создание релиза не удалось.
-        # Этот артефакт НЕ является файлом, прикрепленным к GitHub Release.
         uses: actions/upload-artifact@v4
         with:
           name: built-exe-${{ github.ref_name }}
           path: dist/BackOfficeLauncher.exe
 
       - name: Create GitHub Release
-        # Создаем новый релиз на GitHub и прикрепляем к нему собранный .exe
-        # Этот шаг выполняется только при пуше тега
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            # Путь к исполняемому файлу, который нужно прикрепить к релизу.
-            # PyInstaller помещает готовый .exe в поддиректорию 'dist'.
             dist/BackOfficeLauncher.exe
-          name: Release ${{ github.ref_name }} # Имя релиза будет "Release vX.Y.Z"
-          body: | # Описание релиза (можно использовать, например, сообщение тега)
+          name: Release ${{ github.ref_name }}
+          body: |
             Автоматический релиз версии ${{ github.ref_name }}
             Собран на GitHub Actions.
 
             Файл: BackOfficeLauncher.exe
-          draft: false # Не создавать как черновик
-          prerelease: false # Не создавать как пре-релиз
+          draft: false
+          prerelease: false
         env:
-          # GITHUB_TOKEN предоставляется GitHub Actions автоматически для аутентификации
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
