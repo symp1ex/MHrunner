@@ -295,6 +295,10 @@ def step_wait_edit_config(config, launch_data, update_status_callback, update_pr
     target_port = launch_data['parsed_target']['Port']
     config_protocol = launch_data['config_protocol']
 
+    # Получаем логин из конфига
+    target_login = get_config_value(config, 'Settings', 'DefaultLogin', default='iikoUser', type_cast=str)
+    logging.info(f"Получен логин из конфига для записи: '{target_login}'")
+
     config_file_path = os.path.join(backoffice_temp_dir, "config", "backclient.config.xml")
     config_wait_timeout = get_config_value(config, 'Settings', 'ConfigFileWaitTimeoutSec', default=60, type_cast=int)
     config_check_interval = get_config_value(config, 'Settings', 'ConfigFileCheckIntervalMs', default=100, type_cast=int)
@@ -328,7 +332,7 @@ def step_wait_edit_config(config, launch_data, update_status_callback, update_pr
 
 
     # Редактируем файл конфигурации
-    if not edit_config_file(config_file_path, target_url_or_ip, target_port, config_protocol, update_status_callback):
+    if not edit_config_file(config_file_path, target_url_or_ip, target_port, config_protocol, target_login, update_status_callback):
          raise RuntimeError(f"Не удалось отредактировать файл конфигурации '{config_file_path}'.")
 
     return True # Сигнализируем об успехе

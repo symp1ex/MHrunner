@@ -370,38 +370,22 @@ class LaunchWorker(BaseWorker):
             base, range_ = self._get_step_progress_range('wait_edit_config')
             self._update_progress(base) # Начальный прогресс шага
 
-            # Ожидаем появления файла конфигурации
-            wait_success = wait_for_file(
-                os.path.join(self.launch_data['backoffice_temp_dir'], "config", "backclient.config.xml"),
-                get_config_value(self.config, 'Settings', 'ConfigFileWaitTimeoutSec', default=60, type_cast=int),
-                get_config_value(self.config, 'Settings', 'ConfigFileCheckIntervalMs', default=100, type_cast=int),
-                self._update_status,
-                self._update_progress,
-                base, # База прогресса для wait_for_file
-                range_, # Диапазон прогресса для wait_for_file
-                lambda: self._is_canceled # Передаем колбэк отмены
+            # и редактирования конфига, получая логин из config.
+            step_success = step_wait_edit_config(
+                 self.config, # Передаем объект конфига
+                 self.launch_data, # Передаем launch_data (содержит все нужные пути и данные)
+                 self._update_status,
+                 self._update_progress,
+                 base,
+                 range_,
+                 lambda: self._is_canceled
             )
 
-            if not wait_success:
-                 # wait_for_file вернет False, если отмена произошла во время ожидания
-                 raise AbortOperation("Waiting for config file aborted.")
-            # Если wait_for_file выбросил TimeoutError, он будет пойман в блоке except.
-
-
-            # Файл найден. Останавливаем процесс BackOffice перед редактированием.
-            self._stop_backoffice_process() # Останавливаем процесс, запущенный на шаге 9
-            time.sleep(1.0) # Даем немного времени
-
-            self._update_status("Редактирование файла конфигурации...")
-            # Прогресс редактирования внутри wait_edit_config уже учтен в wait_for_file
-            if not edit_config_file(
-                os.path.join(self.launch_data['backoffice_temp_dir'], "config", "backclient.config.xml"),
-                self.launch_data['parsed_target']['UrlOrIp'],
-                self.launch_data['parsed_target']['Port'],
-                self.launch_data['config_protocol'],
-                self._update_status
-            ):
-                 raise RuntimeError(f"Не удалось отредактировать файл конфигурации '{os.path.join(self.launch_data['backoffice_temp_dir'], 'config', 'backclient.config.xml')}'.")
+            if not step_success:
+                 # step_wait_edit_config вернет False только при отмене
+                 raise AbortOperation("Waiting for config file and editing aborted.")
+            # Если step_wait_edit_config выбросил TimeoutError или RuntimeError,
+            # они будут пойманы в блоке except LaunchWorker.run.
 
             self._update_status("Файл конфигурации успешно отредактирован.")
             self._update_step_progress('wait_edit_config', 1.0) # Обновляем прогресс шага до 100%
@@ -478,8 +462,7 @@ class LaunchWorker(BaseWorker):
             logging.info("LaunchWorker завершен.")
 
 
-# LaunchWorkerFromStep4 и LaunchWorkerFromStep5 теперь просто вызывают _run_from_step4 и _run_from_step5
-# и наследуют логику обработки ошибок и отмены от LaunchWorker
+
 class LaunchWorkerFromStep4(LaunchWorker):
      """Воркер для возобновления последовательности запуска с Шага 4 (после выбора типа приложения)."""
      def run(self):

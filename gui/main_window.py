@@ -1,18 +1,17 @@
 import logging
+import os
+import sys
 
 from PyQt6.QtWidgets import (
-    QMainWindow, QApplication, QWidget, QVBoxLayout, QHBoxLayout,
+    QMainWindow, QApplication, QWidget, QVBoxLayout,
     QGridLayout, QLabel, QLineEdit, QPushButton, QProgressBar,
     QTextEdit, QMessageBox, QSizePolicy
 )
 from PyQt6.QtCore import Qt, QThread, QEvent, QTimer
-from PyQt6.QtGui import QColor, QPalette, QFont, QTextOption, QBrush # Импорт QBrush для палитры
-
+from PyQt6.QtGui import QColor, QPalette, QFont, QTextOption, QIcon
 
 # Импортируем модули с логикой и воркерами
 from workers.tasks import CheckWorker, LaunchWorker, LaunchWorkerFromStep4, LaunchWorkerFromStep5, BaseWorker
-# Импортируем AbortOperation для проверки типа исключения
-from utils.exceptions import AbortOperation
 
 
 class MainWindow(QMainWindow):
@@ -26,6 +25,13 @@ class MainWindow(QMainWindow):
         # Устанавливаем фиксированную ширину, но оставляем возможность растягивать по вертикали
         self.setFixedWidth(550)
         self.setFixedHeight(260) # Минимальная высота
+
+        icon_path = os.path.join(os.path.dirname(sys.argv[0]), 'icon.ico')
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+            logging.debug(f"Иконка окна установлена из файла: '{icon_path}'")
+        else:
+            logging.warning(f"Файл иконки не найден по пути: '{icon_path}'. Иконка окна не установлена.")
 
         # Применяем светлую палитру
         self._apply_light_palette()

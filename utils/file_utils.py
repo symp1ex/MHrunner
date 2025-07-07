@@ -168,7 +168,7 @@ def wait_for_file(filepath, timeout_sec, check_interval_ms, update_status_callba
     return True
 
 
-def edit_config_file(filepath, target_url_or_ip, target_port, config_protocol, update_status_callback=None):
+def edit_config_file(filepath, target_url_or_ip, target_port, config_protocol, target_login, update_status_callback=None):
     """Редактирует файл backclient.config.xml."""
     logging.info(f"Редактирование файла конфигурации: '{filepath}'")
     if update_status_callback:
@@ -181,6 +181,7 @@ def edit_config_file(filepath, target_url_or_ip, target_port, config_protocol, u
         root = tree.getroot()
 
         servers_list_node = root.find('.//ServersList')
+        login_node = root.find('.//Login')
 
         if servers_list_node is not None:
             logging.debug("Узел ServersList найден.")
@@ -206,6 +207,12 @@ def edit_config_file(filepath, target_url_or_ip, target_port, config_protocol, u
             else:
                 logging.warning("  Узел Port не найден под ServersList. Не удалось обновить.")
 
+            if login_node is not None:
+                login_node.text = target_login
+                logging.info(f"  Обновлен Login на '{target_login}'")
+            else:
+                logging.info(f"  Узел Login не найден, используется admin по-умолчанию'")
+                
             tree.write(filepath, encoding='utf-8', xml_declaration=True)
             logging.info("Файл конфигурации успешно обновлен.")
             if update_status_callback:
