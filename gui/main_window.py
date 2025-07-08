@@ -15,7 +15,8 @@ from PyQt6.QtGui import QColor, QPalette, QFont, QTextOption, QIcon, QGuiApplica
 # Импортируем модули с логикой и воркерами
 from core.config import get_config_value
 from utils.anydesk_utils import launch_anydesk
-from utils.url_utils import find_anydesk_id, parse_target_string
+from utils.litemanager_utils import launch_litemanager
+from utils.url_utils import find_anydesk_id, find_litemanager_id, parse_target_string
 from utils.process_utils import is_anydesk_running
 from workers.tasks import CheckWorker, LaunchWorker, LaunchWorkerFromStep4, LaunchWorkerFromStep5, BaseWorker
 
@@ -27,7 +28,7 @@ class MainWindow(QMainWindow):
         self.config = config
         self.initial_target = initial_target
 
-        self.setWindowTitle("BackOffice Launcher App")
+        self.setWindowTitle("Service Launcher App")
         # Устанавливаем фиксированную ширину, но оставляем возможность растягивать по вертикали
         self.setFixedWidth(550)
         self.setFixedHeight(260) # Минимальная высота
@@ -54,7 +55,7 @@ class MainWindow(QMainWindow):
         input_layout.setVerticalSpacing(8) # Вертикальные отступы
 
         # Строка 0: Метка и поле ввода
-        input_layout.addWidget(QLabel("Enter URL or Anydesk ID"), 0, 0, alignment=Qt.AlignmentFlag.AlignLeft)
+        input_layout.addWidget(QLabel("Enter URL or ID"), 0, 0, alignment=Qt.AlignmentFlag.AlignLeft)
         self.target_entry = QLineEdit()
         input_layout.addWidget(self.target_entry, 0, 1, 1, 2) # Поле ввода занимает 2 колонки
         self.target_entry.returnPressed.connect(self.start_process_flow)
@@ -421,7 +422,7 @@ class MainWindow(QMainWindow):
         """
         target_string = self.target_entry.text().strip()
         if not target_string:
-            self._update_status("Введите URL, IP:порт или AnyDesk ID.", level="WARNING")
+            self._update_status("Введите URL или LM\AnyDesk ID.", level="WARNING")
             return
 
         self._update_text_area("") # Очищаем текстовую область
@@ -432,6 +433,13 @@ class MainWindow(QMainWindow):
         modifiers = QGuiApplication.keyboardModifiers()
         ctrl_is_pressed = modifiers & Qt.KeyboardModifier.ControlModifier
         logging.debug(f"Ctrl нажат?: {bool(ctrl_is_pressed)}")
+
+        litemanager_id = find_litemanager_id(self.config, target_string)
+
+        if litemanager_id:
+            logging.info(f"Обнаружен потенциальный LiteManager ID: '{litemanager_id}'. Запуск LiteManager flow.")
+            self._handle_litemanager_flow(litemanager_id)
+            return # Завершаем функцию
 
         # --- Проверка на AnyDesk ID ---
         anydesk_id = find_anydesk_id(target_string)
@@ -597,6 +605,76 @@ class MainWindow(QMainWindow):
             self._update_progress(0)
             logging.info("Anydesk flow завершен пользователем (диалог отменен).")
 
+    def _handle_litemanager_flow(self, lm_id):
+        """Обрабатывает последовательность запуска LiteManager: запрос пароля и запуск."""
+        self._update_status(f"Найден LiteManager ID: {lm_id}. Подготовка...", level="INFO")
+        self._update_progress(10) # Начальный прогресс для LiteManager flow
+        self._update_text_area(f"Обнаружен LiteManager ID: {lm_id}. Пожалуйста, введите пароль для подключения.")
+
+        self._update_status(f"LiteManager ID: {lm_id}. Запрос пароля...", level="INFO")
+        self._update_progress(40) # Прогресс перед запросом пароля
+
+        # Отключаем кнопки во время диалога
+        self._disable_buttons()
+
+        # Запрашиваем пароль у пользователя
+        password, accepted = QInputDialog.getText(
+            self,
+            "LiteManager: Введите пароль",
+            f"Введите пароль для подключения к ID {lm_id}:",
+            QLineEdit.EchoMode.Password # Скрывает вводимый текст
+        )
+
+        # Включаем кнопки обратно после закрытия диалога
+        self._enable_buttons()
+        self._set_check_button_to_check()
+
+        if accepted and password:
+            logging.info("LiteManager Flow: Пароль LiteManager введен. Попытка запуска LiteManager.")
+            self._update_status(f"Запуск LiteManager для {lm_id}...", level="INFO")
+            self._update_progress(50) # Прогресс до 50% на время запуска
+
+            lm_path = get_config_value(self.config, 'Settings', 'LiteManagerPath', default=None, type_cast=str)
+
+            if not lm_path or not os.path.exists(lm_path):
+                 error_msg = f"Ошибка: Путь к ROMViewer.exe не указан в config.ini или файл не найден: '{lm_path}'"
+                 logging.error(f"LiteManager Flow: {error_msg}")
+                 self._update_status(error_msg, level="ERROR")
+                 self._update_text_area(f"Ошибка запуска LiteManager:\n{error_msg}\n\nПроверьте config.ini.")
+                 self._update_progress(0)
+                 return # Прерываем flow
+
+            try:
+                # Запускаем LiteManager
+                pid = launch_litemanager(lm_path, lm_id, password)
+                self._update_status(f"LiteManager запущен для {lm_id} (PID: {pid}).", level="INFO")
+                self._update_text_area(f"LiteManager успешно запущен для ID {lm_id}.\nPID процесса: {pid}")
+                self._update_progress(100)
+                logging.info("LiteManager flow завершен успешно.")
+
+            except Exception as e:
+                error_msg = f"Ошибка при запуске LiteManager: {e}"
+                logging.error(f"LiteManager Flow: {error_msg}\n{traceback.format_exc()}")
+                self._update_status(error_msg, level="ERROR")
+                self._update_text_area(f"Ошибка запуска LiteManager:\n{error_msg}\n\nПолные детали в логе.")
+                self._update_progress(0)
+                logging.error("LiteManager flow завершен с ошибкой.")
+
+
+        elif accepted and not password:
+             logging.warning("LiteManager Flow: Пароль LiteManager не введен.")
+             self._update_status("Запуск LiteManager отменен: пароль не введен.", level="WARNING")
+             self._update_text_area("Запуск LiteManager отменен: пароль не был введен.")
+             self._update_progress(0)
+             logging.info("LiteManager flow завершен пользователем (пароль не введен).")
+
+        else: # accepted is False (диалог отменен)
+            logging.info("LiteManager Flow: Ввод пароля LiteManager отменен пользователем.")
+            self._update_status("Запуск LiteManager отменен пользователем.", level="WARNING")
+            self._update_text_area("Запуск LiteManager отменен пользователем.")
+            self._update_progress(0)
+            logging.info("LiteManager flow завершен пользователем (диалог отменен).")
+
 
     def start_check(self):
         """
@@ -607,6 +685,16 @@ class MainWindow(QMainWindow):
         if not target_string:
             self._update_status("Введите URL или IP:порт для проверки.", level="WARNING")
             return
+
+        litemanager_id = find_litemanager_id(self.config, target_string)
+
+        if litemanager_id:
+            logging.info(f"LiteManager ID '{litemanager_id}' обнаружен при попытке проверки сервера. Вывод сообщения 'Херню спросил'.")
+            self._update_text_area("") # Очищаем текстовую область
+            # Используем уровень WARNING для оранжевого цвета, как для предупреждений
+            self._update_status("Херню спросил", level="WARNING")
+            self._update_progress(0)
+            return # Прерываем выполнение, не запуская CheckWorker
 
         # --- Проверка на AnyDesk ID при нажатии Check ---
         anydesk_id = find_anydesk_id(target_string)

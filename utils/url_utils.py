@@ -2,6 +2,8 @@ import os
 import re
 import logging
 
+from core.config import get_config_value
+
 def parse_target_string(input_string):
     """
     Парсит входную строку (URL или IP:Port), извлекая хост/IP, порт и определяя схему.
@@ -123,6 +125,45 @@ def find_anydesk_id(input_string):
              return None # Не соответствует критериям
     else:
         logging.debug("AnyDesk ID не найден в строке.")
+        return None
+
+def find_litemanager_id(config, input_string):
+    """
+    Ищет в строке ID LiteManager, соответствующий маске из конфига.
+    Возвращает найденный ID или None.
+    """
+    logging.debug(f"Поиск LiteManager ID в строке: '{input_string}'")
+    if not input_string or not input_string.strip():
+        return None
+
+    # Получаем маску из конфига
+    id_mask = get_config_value(config, 'Settings', 'LiteManagerIdMask', default=None, type_cast=str)
+
+    if not id_mask:
+        logging.warning("Маска LiteManager ID не задана в конфиге (LiteManagerIdMask). Поиск невозможен.")
+        return None
+
+    # Преобразуем маску в регулярное выражение: '1' -> '\d' (цифра), остальное - как есть.
+    # Оборачиваем в \b для поиска как целого "слова".
+    # Используем re.escape для экранирования любых специальных символов в маске (кроме 1)
+    # Но нам нужно только заменить '1', поэтому делаем это вручную.
+    # Более безопасный подход - экранировать всю маску, а потом заменить экранированную '1'.
+    escaped_mask = re.escape(id_mask)
+    lm_regex_pattern = escaped_mask.replace(re.escape('1'), r'\d') # Заменяем экранированную '1' на '\d'
+
+    # Добавляем границы слова
+    lm_regex = r'\b(' + lm_regex_pattern + r')\b'
+    logging.debug(f"Маска LiteManager ID: '{id_mask}'. Сгенерированное regex: '{lm_regex}'")
+
+
+    match = re.search(lm_regex, input_string)
+
+    if match:
+        found_id = match.group(1)
+        logging.debug(f"Найден потенциальный LiteManager ID: '{found_id}'")
+        return found_id.strip() # Возвращаем найденный ID (удаляем пробелы по краям, если они были захвачены \b)
+    else:
+        logging.debug("LiteManager ID не найден в строке по заданной маске.")
         return None
 
 def format_version(version_string):
