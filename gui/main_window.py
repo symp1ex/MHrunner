@@ -1,16 +1,22 @@
 import logging
 import os
+import shutil
 import sys
+import traceback
 
 from PyQt6.QtWidgets import (
     QMainWindow, QApplication, QWidget, QVBoxLayout,
     QGridLayout, QLabel, QLineEdit, QPushButton, QProgressBar,
-    QTextEdit, QMessageBox, QSizePolicy
+    QTextEdit, QMessageBox, QSizePolicy, QInputDialog
 )
 from PyQt6.QtCore import Qt, QThread, QEvent, QTimer
-from PyQt6.QtGui import QColor, QPalette, QFont, QTextOption, QIcon
+from PyQt6.QtGui import QColor, QPalette, QFont, QTextOption, QIcon, QGuiApplication
 
 # Импортируем модули с логикой и воркерами
+from core.config import get_config_value
+from utils.anydesk_utils import launch_anydesk
+from utils.url_utils import find_anydesk_id, parse_target_string
+from utils.process_utils import is_anydesk_running
 from workers.tasks import CheckWorker, LaunchWorker, LaunchWorkerFromStep4, LaunchWorkerFromStep5, BaseWorker
 
 
@@ -48,10 +54,10 @@ class MainWindow(QMainWindow):
         input_layout.setVerticalSpacing(8) # Вертикальные отступы
 
         # Строка 0: Метка и поле ввода
-        input_layout.addWidget(QLabel("Введите URL или IP:порт:"), 0, 0, alignment=Qt.AlignmentFlag.AlignLeft)
+        input_layout.addWidget(QLabel("Enter URL or Anydesk ID"), 0, 0, alignment=Qt.AlignmentFlag.AlignLeft)
         self.target_entry = QLineEdit()
         input_layout.addWidget(self.target_entry, 0, 1, 1, 2) # Поле ввода занимает 2 колонки
-        self.target_entry.returnPressed.connect(self.start_launch)
+        self.target_entry.returnPressed.connect(self.start_process_flow)
         self.target_entry.installEventFilter(self) # Устанавливаем фильтр событий для вставки по средней кнопке
 
         self.paste_button = QPushButton("Paste")
@@ -71,7 +77,7 @@ class MainWindow(QMainWindow):
 
         self.launch_button = QPushButton("Launch")
         input_layout.addWidget(self.launch_button, 1, 3) # Кнопка Launch в 3 колонке
-        self.launch_button.clicked.connect(self.start_launch)
+        self.launch_button.clicked.connect(self.start_process_flow)
 
         # Строка 2: Прогресс бар
         self.progress_bar = QProgressBar()
@@ -146,9 +152,10 @@ class MainWindow(QMainWindow):
         elif level == "WARNING":
             color = "orange"
         elif level == "INFO":
-            color = "green" # Зеленый для информационных сообщений
+            color = "green"
+        elif level == "DEBUG":
+             color = "gray"
 
-        # ИСПРАВЛЕНО: Используем setText для QLabel, RichText включен для цвета
         self.status_label.setText(f"<span style='color:{color};'>{message}</span>")
 
     def _update_progress(self, value):
@@ -405,31 +412,215 @@ class MainWindow(QMainWindow):
         logging.debug("Ссылки self.worker и self.worker_thread обнулены.")
 
 
-    def start_launch(self):
-        """Запускает последовательность запуска BackOffice."""
+    def start_process_flow(self):
+        """
+        Определяет, запускать ли Anydesk или последовательность BackOffice,
+        основываясь на введенной строке.
+        Подключена к кнопке Launch и сигналу returnPressed поля ввода.
+        Проверяет состояние клавиши Ctrl.
+        """
         target_string = self.target_entry.text().strip()
         if not target_string:
-            self._update_status("Введите URL или IP:порт.", level="WARNING")
+            self._update_status("Введите URL, IP:порт или AnyDesk ID.", level="WARNING")
             return
 
         self._update_text_area("") # Очищаем текстовую область
-        self._update_status("Запуск процесса...")
         self._update_progress(0)
 
-        # Сохраняем начальные данные для передачи воркеру
-        self._launch_data = {'target_string': target_string}
+        # --- Проверка состояния клавиши Ctrl ---
+        # Используем QGuiApplication для доступа к состоянию клавиатуры
+        modifiers = QGuiApplication.keyboardModifiers()
+        ctrl_is_pressed = modifiers & Qt.KeyboardModifier.ControlModifier
+        logging.debug(f"Ctrl нажат?: {bool(ctrl_is_pressed)}")
 
-        # Запускаем основной воркер запуска
+        # --- Проверка на AnyDesk ID ---
+        anydesk_id = find_anydesk_id(target_string)
+
+        if anydesk_id:
+            logging.info(f"Обнаружен потенциальный AnyDesk ID: '{anydesk_id}'. Запуск Anydesk flow.")
+            self._handle_anydesk_flow(anydesk_id, bool(ctrl_is_pressed))
+            # После обработки Anydesk flow, независимо от результата (успех/отмена/ошибка),
+            # мы не продолжаем к запуску BackOffice.
+            return # Завершаем функцию
+
+        # --- Если не Anydesk ID, продолжаем с BackOffice flow ---
+        logging.info("AnyDesk ID не обнаружен. Запуск BackOffice flow.")
+        self._update_status("Парсинг введенного адреса...", level="INFO")
+
+        # --- Предварительный парсинг перед запуском воркера ---
+        try:
+            parsed_target_data = parse_target_string(target_string)
+            if parsed_target_data is None or not parsed_target_data.get('UrlOrIp'):
+                # Если парсинг не удался, выводим ошибку и останавливаемся
+                self._update_status("Invalid input: Не удалось распарсить адрес.", level="ERROR")
+                logging.error(f"Ошибка парсинга введенной строки: '{target_string}'. parse_target_string вернул None.")
+                self._update_progress(0)
+                return # Прерываем функцию, воркер не запускается
+
+            # Сохраняем результат парсинга и определенную схему для конфига
+            self._launch_data = {
+                'target_string': target_string,
+                'parsed_target': parsed_target_data,
+                'config_protocol': parsed_target_data['Scheme'] # Сохраняем схему из парсера
+            }
+            logging.debug(f"Предварительный парсинг успешен. Данные для запуска: {self._launch_data}")
+
+        except Exception as e:
+            # Ловим любые другие ошибки при предварительном парсинге
+            logging.error(f"Неожиданная ошибка при предварительном парсинге строки '{target_string}': {e}\n{traceback.format_exc()}")
+            self._update_status(f"Invalid input: Ошибка парсинга ({e}).", level="ERROR")
+            self._update_progress(0)
+            return # Прерываем функцию, воркер не запускается
+        # --- Конец предварительного парсинга ---
+
+
+        # Если предварительный парсинг успешен, запускаем воркер BackOffice.
+        # LaunchWorker использует переданные parsed_target и config_protocol
+        # на Шаге 1 вместо повторного парсинга target_string.
         self._start_worker(LaunchWorker, self._launch_data)
 
 
+    def _handle_anydesk_flow(self, anydesk_id, ctrl_pressed):
+        """
+        Обрабатывает последовательность запуска Anydesk:
+        Проверка процесса (если Anydesk не запущен И Ctrl нажат), очистка папки, запрос пароля и запуск.
+        """
+        self._update_status(f"Найден AnyDesk ID: {anydesk_id}. Подготовка...", level="INFO")
+        self._update_progress(10) # Начальный прогресс для Anydesk flow
+
+        # --- Проверка процесса Anydesk и очистка папки (ТОЛЬКО если процесс НЕ запущен И Ctrl нажат) ---
+        anydesk_is_running = is_anydesk_running()
+        logging.info(f"Процесс Anydesk запущен: {anydesk_is_running}. Ctrl нажат: {ctrl_pressed}")
+
+        # Условие для очистки папки: AnyDesk НЕ запущен И Ctrl нажат
+        should_clean = not anydesk_is_running and ctrl_pressed
+
+        if should_clean:
+            anydesk_appdata_path = os.path.join(os.getenv('APPDATA'), 'AnyDesk')
+            logging.info(f"Процесс Anydesk не запущен и Ctrl нажат. Попытка удаления папки кэша: '{anydesk_appdata_path}'")
+            self._update_status("Очистка кэша AnyDesk...", level="INFO")
+            self._update_progress(20) # Прогресс после проверки, перед очисткой
+
+            if os.path.exists(anydesk_appdata_path):
+                try:
+                    shutil.rmtree(anydesk_appdata_path, ignore_errors=False) # Не игнорируем ошибки
+                    logging.info("Папка кэша Anydesk успешно удалена.")
+                    self._update_status("Кэш AnyDesk очищен.", level="INFO")
+                    self._update_progress(30) # Прогресс после успешной очистки
+                except Exception as e:
+                    error_msg = f"Ошибка при удалении папки кэша Anydesk '{anydesk_appdata_path}': {e}"
+                    logging.error(error_msg)
+                    self._update_status(error_msg, level="ERROR")
+                    self._update_text_area(f"Ошибка очистки кэша AnyDesk:\n{error_msg}\n\nЗапуск может быть некорректным.")
+                    # Не прерываем flow при ошибке очистки, просто логируем и сообщаем пользователю.
+                    self._update_progress(30) # Прогресс после ошибки очистки
+            else:
+                logging.info("Папка кэша Anydesk не найдена. Очистка не требуется.")
+                self._update_status("Кэш AnyDesk не найден, очистка не требуется.", level="INFO")
+                self._update_progress(30) # Прогресс, если папка не найдена
+        else:
+            # Логируем, почему очистка пропущена
+            reason = []
+            if anydesk_is_running:
+                reason.append("AnyDesk запущен")
+            if not ctrl_pressed:
+                reason.append("Ctrl не нажат")
+            logging.warning(f"Очистка папки Anydesk пропущена. Причина: {', '.join(reason)}.")
+            self._update_status(f"Очистка кэша Anydesk пропущена.", level="WARNING")
+            self._update_progress(30) # Прогресс после пропуска очистки
+
+
+        # --- Запрос пароля и запуск Anydesk ---
+        # Этот блок выполняется независимо от того, была ли очистка
+        self._update_status(f"AnyDesk ID: {anydesk_id}. Запрос пароля...", level="INFO")
+        self._update_progress(40) # Прогресс перед запросом пароля
+
+        # Отключаем кнопки во время диалога
+        self._disable_buttons()
+
+        # Запрашиваем пароль у пользователя
+        # QInputDialog.getText блокирует выполнение до закрытия диалога
+        password, accepted = QInputDialog.getText(
+            self,
+            "AnyDesk: Введите пароль",
+            f"Введите пароль для подключения к ID {anydesk_id}:",
+            QLineEdit.EchoMode.Password # Скрывает вводимый текст
+        )
+
+        # Включаем кнопки обратно после закрытия диалога
+        self._enable_buttons()
+        self._set_check_button_to_check()
+
+        if accepted and password:
+            logging.info("Пароль Anydesk введен. Попытка запуска Anydesk.")
+            self._update_status(f"Запуск AnyDesk для {anydesk_id}...", level="INFO")
+            self._update_progress(50) # Прогресс до 50% на время запуска Anydesk
+
+            anydesk_path = get_config_value(self.config, 'Settings', 'AnyDeskPath', default=None, type_cast=str)
+
+            if not anydesk_path or not os.path.exists(anydesk_path):
+                 error_msg = f"Ошибка: Путь к AnyDesk.exe не указан в config.ini или файл не найден: '{anydesk_path}'"
+                 logging.error(error_msg)
+                 self._update_status(error_msg, level="ERROR")
+                 self._update_text_area(f"Ошибка запуска AnyDesk:\n{error_msg}\n\nПроверьте config.ini.")
+                 self._update_progress(0)
+                 return # Прерываем flow
+
+            try:
+                # Запускаем Anydesk
+                pid = launch_anydesk(anydesk_path, anydesk_id, password)
+                self._update_status(f"AnyDesk запущен для {anydesk_id} (PID: {pid}).", level="INFO")
+                self._update_text_area(f"AnyDesk успешно запущен для ID {anydesk_id}.\nPID процесса: {pid}")
+                self._update_progress(100)
+                logging.info("Anydesk flow завершен успешно.")
+
+            except Exception as e:
+                error_msg = f"Ошибка при запуске Anydesk: {e}"
+                logging.error(f"{error_msg}\n{traceback.format_exc()}")
+                self._update_status(error_msg, level="ERROR")
+                self._update_text_area(f"Ошибка запуска AnyDesk:\n{error_msg}\n\nПолные детали в логе.")
+                self._update_progress(0)
+                logging.error("Anydesk flow завершен с ошибкой.")
+
+
+        elif accepted and not password:
+             logging.warning("Пароль Anydesk не введен.")
+             self._update_status("Запуск AnyDesk отменен: пароль не введен.", level="WARNING")
+             self._update_text_area("Запуск AnyDesk отменен: пароль не был введен.")
+             self._update_progress(0)
+             logging.info("Anydesk flow завершен пользователем (пароль не введен).")
+
+        else: # accepted is False (диалог отменен)
+            logging.info("Ввод пароля Anydesk отменен пользователем.")
+            self._update_status("Запуск AnyDesk отменен пользователем.", level="WARNING")
+            self._update_text_area("Запуск AnyDesk отменен пользователем.")
+            self._update_progress(0)
+            logging.info("Anydesk flow завершен пользователем (диалог отменен).")
+
+
     def start_check(self):
-        """Запускает последовательность проверки сервера."""
+        """
+        Запускает последовательность проверки сервера или реагирует на Anydesk ID,
+        выводя сообщение "Херню спросил" при обнаружении ID.
+        """
         target_string = self.target_entry.text().strip()
         if not target_string:
             self._update_status("Введите URL или IP:порт для проверки.", level="WARNING")
             return
 
+        # --- Проверка на AnyDesk ID при нажатии Check ---
+        anydesk_id = find_anydesk_id(target_string)
+
+        if anydesk_id:
+            logging.info(f"AnyDesk ID '{anydesk_id}' обнаружен при попытке проверки сервера. Вывод сообщения 'Херню спросил'.")
+            self._update_text_area("") # Очищаем текстовую область
+            # Используем уровень WARNING для оранжевого цвета, как для предупреждений
+            self._update_status("Херню спросил", level="WARNING")
+            self._update_progress(0)
+            return # Прерываем выполнение, не запуская CheckWorker
+
+        # --- Если не Anydesk ID, продолжаем с BackOffice Check flow ---
+        logging.info("Запуск BackOffice Check flow.")
         self._update_text_area("") # Очищаем текстовую область
         self._update_status("Выполнение проверки сервера...")
         self._update_progress(0)
@@ -461,10 +652,10 @@ class MainWindow(QMainWindow):
 
         if clipboard_content and clipboard_content.strip():
             # Ограничиваем длину, чтобы не загромождать поле ввода
-            truncated_content = clipboard_content.strip()[:250] # Увеличил лимит
+            truncated_content = clipboard_content.strip()[:100]
             self.target_entry.clear()
             self.target_entry.setText(truncated_content)
-            logging.debug(f"Вставлено содержимое из буфера (ограничено до 250 символов): '{truncated_content}'")
+            logging.debug(f"Вставлено содержимое из буфера (ограничено до 100 символов): '{truncated_content}'")
             self._update_status("Ожидание ввода...")
         else:
             logging.warning("Буфер обмена пуст или содержит нетекстовые данные.")

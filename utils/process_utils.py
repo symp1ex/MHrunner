@@ -32,3 +32,45 @@ def stop_process_by_pid(pid):
     except Exception as e:
         logging.error(f"Неизвестная ошибка при остановке процесса BackOffice (PID: {pid}): {e}")
         return False # Не удалось остановить
+
+def is_anydesk_running():
+    """Проверяет, запущен ли процесс Anydesk.exe (для Windows)."""
+    if os.name != 'nt':
+        logging.debug("Проверка процесса Anydesk доступна только на Windows.")
+        return False # На других ОС считаем, что не запущен или неактуально
+
+    logging.debug("Проверка запущенности процесса Anydesk.exe...")
+    try:
+        # Используем tasklist для поиска процесса по имени образа
+        # /FI "IMAGENAME eq Anydesk.exe" - Фильтр: Имя образа равно "Anydesk.exe"
+        # /NH - No Header (не выводить заголовки столбцов)
+        # /FO CSV - Format Output как CSV (легче парсить, хотя нам не нужно парсить, только проверить наличие)
+        # check=False, чтобы не выбрасывать исключение, если процесс не найден (tasklist вернет код 1)
+        # capture_output=True, text=True - для захвата вывода
+        result = subprocess.run(
+            ["tasklist", "/FI", "IMAGENAME eq Anydesk.exe", "/NH", "/FO", "CSV"],
+            check=False,
+            capture_output=True,
+            text=True,
+            creationflags=subprocess.CREATE_NO_WINDOW # Не показывать консольное окно tasklist
+        )
+
+        # Логируем вывод для отладки
+        logging.debug(f"tasklist stdout:\n{result.stdout.strip()}")
+        if result.stderr.strip():
+             logging.debug(f"tasklist stderr:\n{result.stderr.strip()}")
+        logging.debug(f"tasklist returncode: {result.returncode}")
+
+        if "anydesk.exe" in result.stdout.lower():
+            logging.debug("Строка 'Anydesk.exe' найдена в выводе tasklist. Процесс запущен.")
+            return True
+        else:
+            logging.debug("Строка 'Anydesk.exe' не найдена в выводе tasklist. Процесс не запущен.")
+            return False
+
+    except FileNotFoundError:
+        logging.error("Команда 'tasklist' не найдена. Убедитесь, что вы на Windows.")
+        return False # Не удалось проверить
+    except Exception as e:
+        logging.error(f"Неизвестная ошибка при проверке процесса Anydesk: {e}")
+        return False # Не удалось проверить

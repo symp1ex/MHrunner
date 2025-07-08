@@ -91,6 +91,39 @@ def parse_target_string(input_string):
         'IsIpAddress': is_ip_address
     }
 
+def find_anydesk_id(input_string):
+    """
+    Ищет в строке 9 или 10 цифр, возможно разделенных пробелами, в форматах AnyDesk.
+    Возвращает найденный ID (без пробелов) или None.
+    """
+    logging.debug(f"Поиск AnyDesk ID в строке: '{input_string}'")
+    if not input_string or not input_string.strip():
+        return None
+
+    # Новое регулярное выражение для AnyDesk ID:
+    # Оно ищет либо:
+    # 1. 9 или 10 цифр в формате 3-3-3(4) с опциональными пробелами: \d{3}[ ]?\d{3}[ ]?\d{3,4}
+    # 2. ИЛИ 10 цифр в формате 1-3-3-3 с опциональными пробелами: \d[ ]?\d{3}[ ]?\d{3}[ ]?\d{3}
+    # Важно: \b гарантирует, что это целое "слово" (последовательность цифр/пробелов не является частью более длинной строки)
+    anydesk_regex = r'\b(\d{3}[ ]?\d{3}[ ]?\d{3,4}|\d[ ]?\d{3}[ ]?\d{3}[ ]?\d{3})\b'
+
+    match = re.search(anydesk_regex, input_string)
+
+    if match:
+        found_id_with_spaces = match.group(1)
+        anydesk_id = found_id_with_spaces.replace(" ", "") # Удаляем пробелы
+        # Дополнительная проверка, что после удаления пробелов осталось 9 или 10 цифр
+        # Эта проверка все еще нужна, т.к. regex может быть неидеален или могут быть другие edge-кейсы.
+        if len(anydesk_id) in [9, 10]:
+             logging.debug(f"Найден потенциальный AnyDesk ID: '{found_id_with_spaces}' -> '{anydesk_id}'")
+             return anydesk_id
+        else:
+             # Этот случай маловероятен с новым regex, но оставлен для надежности.
+             logging.debug(f"Найден шаблон, но после удаления пробелов длина не 9 или 10: '{found_id_with_spaces}' -> '{anydesk_id}' (длина {len(anydesk_id)})")
+             return None # Не соответствует критериям
+    else:
+        logging.debug("AnyDesk ID не найден в строке.")
+        return None
 
 def format_version(version_string):
     """Форматирует строку версии, возвращая только первые цифры из трёх первых частей."""

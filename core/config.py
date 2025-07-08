@@ -14,7 +14,10 @@ DEFAULT_CONFIG = {
         'ConfigFileWaitTimeoutSec': '60',
         'ConfigFileCheckIntervalMs': '100',
         'DebugLogging': 'False', # Включить подробное логирование в консоль и файл
-        'DefaultLogin': 'iikoUser'
+        'DefaultLogin': 'iikoUser',
+        'AnyDeskPath': 'C:\\Program Files\\AnyDesk\\AnyDesk.exe',
+        'LiteManagerPath': 'C:\Program Files (x86)\\LiteManager Pro - Viewer\\ROMViewer.exe', # Путь к исполняемому файлу LiteManager Viewer
+        'LiteManagerIdMask': 'MH_11111' # Маска для определения ID LiteManager (1 = цифра)
     },
     # Определяем ПРИОРИТЕТ источников. Перечислять через запятую.
     # Скрипт будет проверять источники в указанном порядке.
