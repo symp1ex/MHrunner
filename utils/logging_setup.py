@@ -1,5 +1,3 @@
-# utils/logging_setup.py
-
 import logging
 import sys
 import os
@@ -46,10 +44,3 @@ def setup_logging(config):
             logging.error(f"Ошибка при настройке файлового логирования в '{log_file_path}': {e}")
 
     logging.info(f"Логирование настроено. Уровень: {'DEBUG' if debug_enabled else 'INFO'}")
-
-# Теперь используем стандартный логгер вместо log_message
-# Пример использования:
-# import logging
-# logging.info("Это информационное сообщение")
-# logging.debug("Это отладочное сообщение (появится только при DebugLogging=True)")
-# logging.error("Это сообщение об ошибке")

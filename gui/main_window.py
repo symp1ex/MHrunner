@@ -173,8 +173,7 @@ class MainWindow(QMainWindow):
     def _handle_error(self, message, detailed_traceback):
         """Слот для обработки ошибок из потока."""
         # Логируем полную информацию об ошибке для отладки
-        logging.error(f"GUI получил сигнал об ошибке: {message}")
-        logging.error(f"Полный трейсбек ошибки:\n{detailed_traceback}")
+
 
         # Проверяем, является ли ошибка пользовательской отменой
         is_aborted_error = "AbortOperation" in detailed_traceback
@@ -338,9 +337,13 @@ class MainWindow(QMainWindow):
 
 
     def _start_worker(self, worker_class, data):
-        """Запускает новый воркер в отдельном потоке."""
+        """
+        Запускает новый воркер в отдельном потоке.
+        Предполагается, что вызывающий код (start_process_flow, start_check)
+        уже проверил, что воркер-поток свободен.
+        """
         # Сначала пытаемся корректно завершить предыдущий воркер, если он есть.
-        self._cleanup_worker()
+        # self._cleanup_worker()
 
         # Создаем новый поток и воркер
         self.worker_thread = QThread()
@@ -378,40 +381,42 @@ class MainWindow(QMainWindow):
         logging.info(f"Запущен новый воркер: {worker_class.__name__} в потоке {self.worker_thread.objectName()}")
 
 
-    def _cleanup_worker(self):
-        """
-        Отправляет сигнал отмены предыдущему воркеру, если он активен.
-        Не ждет завершения потока и не обнуляет ссылки здесь.
-        """
-        # Проверяем, существует ли ссылка на предыдущий воркер и является ли он экземпляром BaseWorker
-        # Также проверяем, что поток еще работает, чтобы избежать RuntimeError при обращении к завершенному потоку
-        if self.worker is not None and isinstance(self.worker, BaseWorker) and self.worker_thread is not None and self.worker_thread.isRunning():
-            logging.warning("Обнаружен активный воркер. Отправка сигнала отмены.")
-            # Отправляем сигнал отмены. Воркер должен сам проверить этот флаг.
-            self.worker.cancel()
-            # Мы не ждем здесь завершения потока.
-            # Поток завершится сам после получения сигнала отмены и обработки AbortOperation
-            # или после естественного завершения run().
-            # deleteLater, вызванные ранее, позаботятся об удалении объектов Qt.
-            # Ссылки self.worker и self.worker_thread будут обнулены в _worker_finished.
-        # else:
-             # logging.debug("Нет активного воркера для очистки.")
+    # def _cleanup_worker(self):
+    #     """
+    #     Отправляет сигнал отмены предыдущему воркеру, если он активен.
+    #     Не ждет завершения потока и не обнуляет ссылки здесь.
+    #     """
+    #     # Проверяем, существует ли ссылка на предыдущий воркер и является ли он экземпляром BaseWorker
+    #     # Также проверяем, что поток еще работает, чтобы избежать RuntimeError при обращении к завершенному потоку
+    #     if self.worker is not None and isinstance(self.worker, BaseWorker) and self.worker_thread is not None and self.worker_thread.isRunning():
+    #         logging.warning("Обнаружен активный воркер. Отправка сигнала отмены.")
+    #         # Отправляем сигнал отмены. Воркер должен сам проверить этот флаг.
+    #         self.worker.cancel()
+    #         # Мы не ждем здесь завершения потока.
+    #         # Поток завершится сам после получения сигнала отмены и обработки AbortOperation
+    #         # или после естественного завершения run().
+    #         # deleteLater, вызванные ранее, позаботятся об удалении объектов Qt.
+    #         # Ссылки self.worker и self.worker_thread будут обнулены в _worker_finished.
+    #     # else:
+    #          # logging.debug("Нет активного воркера для очистки.")
 
 
     def _worker_finished(self):
         """Слот, вызываемый, когда worker_thread завершает работу."""
         logging.info("GUI получил сигнал worker_thread.finished.")
+        self.worker = None
+        self.worker_thread = None
+        logging.debug("Ссылки self.worker и self.worker_thread обнулены.")
+
         # Включаем кнопки и возвращаем кнопку Abort в состояние Check
+        logging.info("Возврат UI в исходное состояние.")
         self._enable_buttons()
         self._set_check_button_to_check()
 
         # Очищаем ссылки на воркер и поток после их завершения и планирования удаления
         # Это безопасно делать здесь, т.к. сигнал finished потока гарантирует, что объекты
         # worker и worker_thread уже получили команду deleteLater и скоро будут удалены.
-        self.worker = None
-        self.worker_thread = None
-        logging.debug("Ссылки self.worker и self.worker_thread обнулены.")
-
+ 
 
     def start_process_flow(self):
         """
@@ -419,6 +424,7 @@ class MainWindow(QMainWindow):
         основываясь на введенной строке.
         Подключена к кнопке Launch и сигналу returnPressed поля ввода.
         Проверяет состояние клавиши Ctrl.
+        Проверяет, свободен ли воркер-поток перед запуском BackOffice flow.
         """
         target_string = self.target_entry.text().strip()
         if not target_string:
@@ -441,18 +447,20 @@ class MainWindow(QMainWindow):
             self._handle_litemanager_flow(litemanager_id)
             return # Завершаем функцию
 
-        # --- Проверка на AnyDesk ID ---
         anydesk_id = find_anydesk_id(target_string)
 
         if anydesk_id:
             logging.info(f"Обнаружен потенциальный AnyDesk ID: '{anydesk_id}'. Запуск Anydesk flow.")
             self._handle_anydesk_flow(anydesk_id, bool(ctrl_is_pressed))
-            # После обработки Anydesk flow, независимо от результата (успех/отмена/ошибка),
-            # мы не продолжаем к запуску BackOffice.
             return # Завершаем функцию
 
-        # --- Если не Anydesk ID, продолжаем с BackOffice flow ---
-        logging.info("AnyDesk ID не обнаружен. Запуск BackOffice flow.")
+        logging.info("ID не обнаружен. Запуск BackOffice flow.")
+        
+        if self.worker_thread is not None and self.worker_thread.isRunning():
+             logging.warning("Воркер-поток занят. Невозможно запустить новую BackOffice операцию.")
+             self._update_status("Операция уже выполняется. Пожалуйста, подождите.", level="WARNING")
+             return # Прерываем функцию, не запускаем новый воркер
+
         self._update_status("Парсинг введенного адреса...", level="INFO")
 
         # --- Предварительный парсинг перед запуском воркера ---
@@ -709,6 +717,12 @@ class MainWindow(QMainWindow):
 
         # --- Если не Anydesk ID, продолжаем с BackOffice Check flow ---
         logging.info("Запуск BackOffice Check flow.")
+        if self.worker_thread is not None and self.worker_thread.isRunning():
+             logging.warning("Воркер-поток занят. Невозможно запустить новую Check операцию.")
+             self._update_status("Операция уже выполняется. Пожалуйста, подождите.", level="WARNING")
+             # Кнопки уже отключены _start_worker'ом предыдущей операции
+             return # Прерываем функцию, не запускаем новый воркер
+        
         self._update_text_area("") # Очищаем текстовую область
         self._update_status("Выполнение проверки сервера...")
         self._update_progress(0)
@@ -718,19 +732,31 @@ class MainWindow(QMainWindow):
 
 
     def abort_process(self):
-        """Слот для кнопки 'Abort'."""
+        """
+        Слот для кнопки 'Abort'
+        Отменяет активный воркер (BackOffice flow).
+        Не влияет на модальные диалоги ввода пароля (Anydesk/LiteManager flow)
+        """
         logging.info("Нажата кнопка 'Abort'. Попытка прервать операцию.")
         # Отключаем кнопку Abort сразу, чтобы избежать повторных нажатий
         self.check_button.setEnabled(False)
         self._update_status("Прерывание операции...", level="WARNING")
 
-        # Вызываем _cleanup_worker, который отправит сигнал отмены активному воркеру
-        # _cleanup_worker сам проверяет, есть ли активный воркер
-        self._cleanup_worker()
-
-        # Дальнейшая логика (включение кнопок, смена текста кнопки) произойдет
-        # автоматически, когда воркер завершится (получив сигнал отмены)
-        # и вызовет _worker_finished.
+        if self.worker is not None and isinstance(self.worker, BaseWorker) and self.worker_thread is not None and self.worker_thread.isRunning():
+             logging.info(f"Обнаружен активный воркер ({self.worker.__class__.__name__}). Отправка сигнала отмены.")
+             self.worker.cancel()
+             # Дальнейшая логика (очистка ссылок, включение кнопок) произойдет
+             # автоматически, когда воркер завершится (получив сигнал отмены)
+             # и вызовет _worker_finished.
+        else:
+             # Если нет активного воркера, просто возвращаем UI в исходное состояние.
+             # Это может произойти, если Abort нажата, когда UI был отключен
+             # модальным диалогом (Anydesk/LM password prompt), но воркера не было.
+             # В нормальной ситуации кнопка Abort должна быть доступна только
+             # когда активен воркер.
+             logging.debug("Кнопка Abort нажата, но нет активного воркера.")
+             self._enable_buttons()
+             self._set_check_button_to_check()
 
 
     def paste_from_clipboard(self):

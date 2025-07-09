@@ -102,7 +102,6 @@ class CheckWorker(BaseWorker):
              self._update_text(f"Проверка отменена:\n{e}")
 
         except Exception as e:
-            logging.error(f"Ошибка в CheckWorker: {e}\n{traceback.format_exc()}")
             # В GUI _handle_error отобразит подробности
             self._update_status("Ошибка проверки: подробности ниже.", level="ERROR")
             self._update_progress(0)
