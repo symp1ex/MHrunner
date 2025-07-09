@@ -381,26 +381,6 @@ class MainWindow(QMainWindow):
         logging.info(f"Запущен новый воркер: {worker_class.__name__} в потоке {self.worker_thread.objectName()}")
 
 
-    # def _cleanup_worker(self):
-    #     """
-    #     Отправляет сигнал отмены предыдущему воркеру, если он активен.
-    #     Не ждет завершения потока и не обнуляет ссылки здесь.
-    #     """
-    #     # Проверяем, существует ли ссылка на предыдущий воркер и является ли он экземпляром BaseWorker
-    #     # Также проверяем, что поток еще работает, чтобы избежать RuntimeError при обращении к завершенному потоку
-    #     if self.worker is not None and isinstance(self.worker, BaseWorker) and self.worker_thread is not None and self.worker_thread.isRunning():
-    #         logging.warning("Обнаружен активный воркер. Отправка сигнала отмены.")
-    #         # Отправляем сигнал отмены. Воркер должен сам проверить этот флаг.
-    #         self.worker.cancel()
-    #         # Мы не ждем здесь завершения потока.
-    #         # Поток завершится сам после получения сигнала отмены и обработки AbortOperation
-    #         # или после естественного завершения run().
-    #         # deleteLater, вызванные ранее, позаботятся об удалении объектов Qt.
-    #         # Ссылки self.worker и self.worker_thread будут обнулены в _worker_finished.
-    #     # else:
-    #          # logging.debug("Нет активного воркера для очистки.")
-
-
     def _worker_finished(self):
         """Слот, вызываемый, когда worker_thread завершает работу."""
         logging.info("GUI получил сигнал worker_thread.finished.")
