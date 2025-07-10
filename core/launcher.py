@@ -27,13 +27,18 @@ def check_server_info(config, target_string, update_status_callback=None, update
         # Шаг проверки: Парсинг (0-10% прогресса проверки)
         parse_progress_range = 10
         if update_status_callback: update_status_callback("Парсинг адреса для проверки...")
+        # Используем parse_target_string для извлечения хоста/порта/схемы
         parsed_target = parse_target_string(target_string)
         if parsed_target is None or not parsed_target.get('UrlOrIp'):
-            raise ValueError("Не удалось распарсить ввод или извлечь хост/IP.")
+            raise ValueError("Не удалось распарсить ввод или извлечь хост/IP.") # Выбрасываем ошибку при неудаче парсинга
         if update_progress_callback: update_progress_callback(check_progress_base + parse_progress_range)
 
         target_url_or_ip = parsed_target['UrlOrIp']
         target_port = parsed_target['Port']
+        # ИСПРАВЛЕНО: Используем схему, определенную парсером на основе порта
+        probe_scheme = parsed_target['Scheme']
+        logging.debug(f"Определена схема '{probe_scheme}' для probe_url на основе порта '{target_port}'.")
+
 
         # Шаг проверки: Формирование URL и запрос (10-90% прогресса проверки)
         http_request_progress_base = check_progress_base + parse_progress_range
@@ -41,11 +46,8 @@ def check_server_info(config, target_string, update_status_callback=None, update
 
         if update_status_callback: update_status_callback(f"Запрос информации о сервере: {target_url_or_ip}:{target_port}...")
 
-        # Логика формирования probe_url такая же, как в _launch_step2_httprequest
-        probe_scheme = "http"
-        if target_url_or_ip.lower().endswith(".iiko.it") or target_url_or_ip.lower().endswith(".syrve.online"):
-            probe_scheme = "https"
-
+        # Логика формирования probe_url: используем схему, определенную выше, и порт из парсинга.
+        # Порт включается в URL только если он НЕ стандартный для этой схемы.
         standard_http_port = 80
         standard_https_port = 443
         include_port_in_probe_url = True
@@ -54,6 +56,10 @@ def check_server_info(config, target_string, update_status_callback=None, update
              include_port_in_probe_url = False
         elif probe_scheme == "https" and target_port == standard_https_port:
              include_port_in_probe_url = False
+        # Если порт указан явно, даже если он стандартный, включаем его в URL для надежности
+        # (хотя requests может быть умным и без этого).
+        # Эта логика осталась, но теперь она применяется к схеме, определенной портом.
+
 
         probe_url = f"{probe_scheme}://{target_url_or_ip}"
         if include_port_in_probe_url:
@@ -103,7 +109,9 @@ def check_server_info(config, target_string, update_status_callback=None, update
 
     except Exception as e:
         logging.error(f"Ошибка во время проверки сервера: {e}\n{traceback.format_exc()}")
-        if update_status_callback: update_status_callback(f"Ошибка проверки: {e}", level="ERROR")
+        # В CheckWorker эта ошибка будет поймана и отправлена в GUI через сигнал error
+        # GUI сам отобразит статус "Ошибка проверки" и подробности.
+        # if update_status_callback: update_status_callback(f"Ошибка проверки: {e}", level="ERROR")
         if update_progress_callback: update_progress_callback(check_progress_base) # Сбрасываем прогресс при ошибке
         raise e # Перебрасываем ошибку для обработки в воркере/GUI
 
@@ -118,7 +126,12 @@ def step_parse_input(target_string):
     logging.info(f"Шаг 1: Парсинг введенного адреса: '{target_string}'")
     parsed_target = parse_target_string(target_string)
     if parsed_target is None or not parsed_target.get('UrlOrIp'):
+        # Эта ошибка будет поймана в GUI.main_window перед запуском воркера.
+        # Если же мы дошли сюда (например, при возобновлении), и parsed_target почему-то None,
+        # то это серьезная внутренняя ошибка.
         raise ValueError("Не удалось распарсить ввод или извлечь хост/IP.")
+
+    # Сохраняем результат парсинга и определенную схему для конфига
     return {'parsed_target': parsed_target, 'config_protocol': parsed_target['Scheme']}
 
 def step_http_request(config, parsed_target):
@@ -127,12 +140,10 @@ def step_http_request(config, parsed_target):
     target_port = parsed_target['Port']
     logging.info(f"Шаг 2: Выполнение GET-запроса к {target_url_or_ip}:{target_port}...")
 
-    probe_scheme = "http"
-    if target_url_or_ip.lower().endswith(".iiko.it") or target_url_or_ip.lower().endswith(".syrve.online"):
-        probe_scheme = "https"
-        logging.debug(f"Определена схема HTTPS для домена '{target_url_or_ip}'")
-    else:
-         logging.debug(f"Определена схема HTTP для адреса '{target_url_or_ip}'")
+    # ИСПРАВЛЕНО: Используем схему, определенную парсером на основе порта
+    probe_scheme = parsed_target['Scheme']
+    logging.debug(f"Определена схема '{probe_scheme}' для probe_url на основе порта '{target_port}'.")
+
 
     standard_http_port = 80
     standard_https_port = 443
@@ -142,6 +153,10 @@ def step_http_request(config, parsed_target):
          include_port_in_probe_url = False
     elif probe_scheme == "https" and target_port == standard_https_port:
          include_port_in_probe_url = False
+    # Если порт указан явно, даже если он стандартный, включаем его в URL для надежности
+    # (хотя requests может быть умным и без этого).
+    # Эта логика осталась, но теперь она применяется к схеме, определенной портом.
+
 
     probe_url = f"{probe_scheme}://{target_url_or_ip}"
     if include_port_in_probe_url:
@@ -153,7 +168,7 @@ def step_http_request(config, parsed_target):
     http_timeout = get_config_value(config, 'Settings', 'HttpRequestTimeoutSec', default=15, type_cast=int)
     server_info = None
     try:
-        response = requests.get(probe_url, timeout=http_timeout)
+        response = requests.get(probe_url, stream=False, timeout=http_timeout) # stream=False для этого запроса
         response.raise_for_status()
         server_info = response.json()
 
@@ -168,8 +183,8 @@ def step_http_request(config, parsed_target):
 
     logging.debug(f"Получен ответ от сервера: {server_info}")
 
-    return {'server_info': server_info, 'probe_url': probe_url}
-
+    # Возвращаем server_info. config_protocol уже определен на шаге 1.
+    return {'server_info': server_info, 'probe_url': probe_url} # Удален 'config_protocol' из возвращаемого значения, т.к. он определен на шаге 1
 
 def step_process_response(target_string, server_info):
     """Шаг 3: Обработка ответа и определение типа приложения."""
