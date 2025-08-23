@@ -39,6 +39,10 @@ class MainWindow(QMainWindow):
         # Устанавливаем фиксированную ширину, но оставляем возможность растягивать по вертикали
         self.setMinimumWidth(450)
         self.setMinimumHeight(220) # Минимальная высота
+
+        self.setMaximumWidth(600)
+        self.setMaximumHeight(400) # Минимальная высота
+
         self.resize(width, height)  # ширина = 800, высота = 600
 
         icon_path = os.path.join(os.path.dirname(sys.argv[0]), 'icon.ico')
