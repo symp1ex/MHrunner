@@ -30,8 +30,9 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("Service Launcher App")
         # Устанавливаем фиксированную ширину, но оставляем возможность растягивать по вертикали
-        self.setFixedWidth(550)
-        self.setFixedHeight(260) # Минимальная высота
+        self.setFixedWidth(600)
+        self.setMinimumHeight(290) # Минимальная высота
+        self.resize(600, 290)  # ширина = 800, высота = 600
 
         icon_path = os.path.join(os.path.dirname(sys.argv[0]), 'icon.ico')
         if os.path.exists(icon_path):
