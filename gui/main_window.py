@@ -4,6 +4,7 @@ import os
 import shutil
 import sys
 import traceback
+from gui.notebook import NotebookWindow
 
 from PyQt6.QtWidgets import (
     QMainWindow, QApplication, QWidget, QVBoxLayout,
@@ -80,6 +81,11 @@ class MainWindow(QMainWindow):
         self.lang_button.clicked.connect(self._switch_language)
         input_row_layout.addWidget(self.lang_button)
 
+        self.notebook_button = QPushButton("📚")
+        self.notebook_button.setMaximumSize(30, 30)
+        input_row_layout.addWidget(self.notebook_button, 0, Qt.AlignmentFlag.AlignRight)
+        self.notebook_button.clicked.connect(self.show_notebook)
+
         self.target_entry = QLineEdit()
         self.target_entry.returnPressed.connect(self.start_process_flow)
         self.target_entry.installEventFilter(self)
@@ -87,6 +93,7 @@ class MainWindow(QMainWindow):
 
         self.paste_button = QPushButton()
         self.paste_button.clicked.connect(self.paste_from_clipboard)
+        self.paste_button.setFixedWidth(105)
         input_row_layout.addWidget(self.paste_button)
         
         self.main_layout.addLayout(input_row_layout)
@@ -104,10 +111,12 @@ class MainWindow(QMainWindow):
 
         self.check_button = QPushButton()
         self.check_button.clicked.connect(self.start_check)
+        self.check_button.setFixedWidth(105)
         grid_layout.addWidget(self.check_button, 0, 1)
 
         self.launch_button = QPushButton()
         self.launch_button.clicked.connect(self.start_process_flow)
+        self.launch_button.setFixedWidth(105)
         grid_layout.addWidget(self.launch_button, 0, 2)
 
         self.progress_bar = QProgressBar()
@@ -582,3 +591,14 @@ class MainWindow(QMainWindow):
                 self.paste_from_clipboard()
                 return True
         return super().eventFilter(obj, event)
+
+    def show_notebook(self):
+        """Открывает окно книжки подключений"""
+        notebook_window = NotebookWindow(self)
+        notebook_window.connection_selected.connect(self.handle_notebook_selection)
+        notebook_window.exec()
+
+    def handle_notebook_selection(self, connection_id):
+        """Обрабатывает выбор подключения из книжки"""
+        self.target_entry.setText(connection_id)
+        self.start_process_flow()

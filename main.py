@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import QApplication
 from core.config import load_config, get_config_value
 from utils.logging_setup import setup_logging
 from gui.main_window import MainWindow
-from locale.translator import Translator # Импортируем наш класс Translator
+from locales.translator import Translator # Импортируем наш класс Translator
 
 
 if __name__ == "__main__":
