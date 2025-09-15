@@ -143,7 +143,9 @@ def find_or_download_installer(config, app_type, version_formatted, vendor, upda
 
 
         if not download_success:
-            raise RuntimeError("Не удалось скачать дистрибутив ни с одного доступного источника.")
+            # Создаем структурированное сообщение об ошибке для последующей локализации в GUI
+            error_message = f"DISTRIBUTION_NOT_FOUND|{app_type}|{version_formatted}"
+            raise RuntimeError(error_message)
 
 
         # 2.2. Распаковываем скачанный архив (Занимает оставшуюся часть download_extract_progress_factor)
