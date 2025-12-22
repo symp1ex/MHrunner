@@ -24,6 +24,12 @@ class AddConnectionDialog(QDialog):
         type_layout.addWidget(QLabel("Type:"))
         self.conn_type = QComboBox()
         self.conn_type.addItems(["Anydesk", "LiteManager"])
+        self.conn_type.setStyleSheet("""
+            QComboBox QAbstractItemView::item:hover {
+                background-color: #e5f3ff;
+                color: black;
+            }
+        """)
         type_layout.addWidget(self.conn_type)
         layout.addLayout(type_layout)
 
@@ -98,6 +104,15 @@ class NotebookWindow(QDialog):
         self.tree.itemDoubleClicked.connect(self.on_item_double_clicked)
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self.show_context_menu)
+        self.tree.setStyleSheet("""
+            QTreeWidget::item:hover {
+                background-color: #e5f3ff;
+            }
+            QTreeWidget::item:selected {
+                background-color: #0078d7;
+                color: white;
+            }
+        """)
         layout.addWidget(self.tree)
 
     def create_notebook(self):
@@ -195,6 +210,17 @@ class NotebookWindow(QDialog):
         item = self.tree.itemAt(position)
         if item and item.parent():  # Проверяем, что это подключение, а не тип
             menu = QMenu()
+            # Явно устанавливаем стиль для меню в Win11
+            menu.setStyleSheet("""
+                QMenu {
+                    background-color: #efefef;
+                    color: black;
+                }
+                QMenu::item:selected {
+                    background-color: #0078d7;
+                    color: white;
+                }
+            """)
             edit_action = menu.addAction("Edit")
             delete_action = menu.addAction("Delete")
 

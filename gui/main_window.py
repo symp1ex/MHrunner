@@ -36,7 +36,7 @@ class MainWindow(QMainWindow):
         except Exception:
             width = 600
             height = 290
-        
+
         self.setMinimumWidth(450)
         self.setMinimumHeight(220)
         self.setMaximumWidth(600)
@@ -66,7 +66,8 @@ class MainWindow(QMainWindow):
         self._launch_data = {}
 
         if self.initial_target:
-            self.target_entry.setText(self.initial_target)
+            self.target_entry.selectAll()
+            self.target_entry.insert(self.initial_target)
             QTimer.singleShot(100, self.start_process_flow)
 
     def setup_ui(self):
@@ -95,7 +96,7 @@ class MainWindow(QMainWindow):
         self.paste_button.clicked.connect(self.paste_from_clipboard)
         self.paste_button.setFixedWidth(105)
         input_row_layout.addWidget(self.paste_button)
-        
+
         self.main_layout.addLayout(input_row_layout)
 
         grid_layout = QGridLayout()
@@ -159,7 +160,7 @@ class MainWindow(QMainWindow):
     def _update_language_button_icon(self):
         current_locale = get_config_value(self.config, 'Settings', 'Language', default='ru')
         target_locale = 'en' if current_locale == 'ru' else 'ru'
-        
+
         script_dir = os.path.dirname(sys.argv[0])
         icon_path = os.path.join(script_dir, 'icons', f'{target_locale}.png')
 
@@ -178,7 +179,7 @@ class MainWindow(QMainWindow):
 
         # Переключаем язык с помощью нашего класса Translator
         self.translator.switch_language(target_locale)
-        
+
         # Сохраняем новую настройку в config.ini
         self.config.set('Settings', 'Language', target_locale)
         try:
@@ -212,7 +213,7 @@ class MainWindow(QMainWindow):
         palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor(128, 128, 128))
         palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Highlight, QColor(192, 192, 192))
         QApplication.setPalette(palette)
-        
+
     # ... (весь остальной код файла main_window.py, начиная с _update_status, остается без изменений)
     def _update_status(self, message, level="INFO"):
         color = "black"
@@ -231,7 +232,7 @@ class MainWindow(QMainWindow):
 
     def _handle_error(self, message, detailed_traceback):
         is_aborted_error = "AbortOperation" in detailed_traceback
-        
+
         if is_aborted_error:
             self._update_status(self.tr("Operation aborted."), level="WARNING")
             self._update_text_area(self.tr("The operation was aborted by the user."))
@@ -366,7 +367,6 @@ class MainWindow(QMainWindow):
             self._update_status(self.tr("Enter a URL or an LM/AnyDesk ID."), level="WARNING")
             return
 
-        self._update_text_area("")
         self._update_progress(0)
 
         modifiers = QGuiApplication.keyboardModifiers()
@@ -538,7 +538,7 @@ class MainWindow(QMainWindow):
         if self.worker_thread is not None and self.worker_thread.isRunning():
              self._update_status(self.tr("An operation is already in progress. Please wait."), level="WARNING")
              return
-        
+
         self._update_text_area("")
         self._update_status(self.tr("Performing server check..."))
         self._update_progress(0)
@@ -563,7 +563,8 @@ class MainWindow(QMainWindow):
         if clipboard_content and clipboard_content.strip():
             truncated_content = clipboard_content.strip()[:100]
             self.target_entry.clear()
-            self.target_entry.setText(truncated_content)
+            self.target_entry.selectAll()
+            self.target_entry.insert(truncated_content)
             self._update_status(self.tr("Waiting for input..."))
         else:
             self._update_status(self.tr("Clipboard is empty or contains non-text data."), level="WARNING")

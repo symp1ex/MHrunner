@@ -17,8 +17,8 @@ DEFAULT_CONFIG = {
         'DefaultLogin': 'iikoUser',
         'AnyDeskPath': 'C:\\Program Files\\AnyDesk\\AnyDesk.exe',
         'LiteManagerPath': 'C:\Program Files (x86)\\LiteManager Pro - Viewer\\ROMViewer.exe', # Путь к исполняемому файлу LiteManager Viewer
-        'LiteManagerIdMask': 'MH_11111', # Маска для определения ID LiteManager (1 = цифра)
-        'Language': 'ru',
+        'LiteManagerIdMask': 'MH_', # Маска для определения ID LiteManager (1 = цифра)
+        'Language': 'en',
         'height_win': '290', 
         'width_win': '600'
     },

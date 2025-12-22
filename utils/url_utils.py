@@ -127,10 +127,11 @@ def find_anydesk_id(input_string):
         logging.debug("AnyDesk ID не найден в строке.")
         return None
 
+
 def find_litemanager_id(config, input_string):
     """
-    Ищет в строке ID LiteManager, соответствующий маске из конфига.
-    Возвращает найденный ID или None.
+    Ищет в строке ID LiteManager по наличию маски из конфига.
+    Возвращает всю строку как ID, если она содержит маску, или None.
     """
     logging.debug(f"Поиск LiteManager ID в строке: '{input_string}'")
     if not input_string or not input_string.strip():
@@ -143,27 +144,14 @@ def find_litemanager_id(config, input_string):
         logging.warning("Маска LiteManager ID не задана в конфиге (LiteManagerIdMask). Поиск невозможен.")
         return None
 
-    # Преобразуем маску в регулярное выражение: '1' -> '\d' (цифра), остальное - как есть.
-    # Оборачиваем в \b для поиска как целого "слова".
-    # Используем re.escape для экранирования любых специальных символов в маске (кроме 1)
-    # Но нам нужно только заменить '1', поэтому делаем это вручную.
-    # Более безопасный подход - экранировать всю маску, а потом заменить экранированную '1'.
-    escaped_mask = re.escape(id_mask)
-    lm_regex_pattern = escaped_mask.replace(re.escape('1'), r'\d') # Заменяем экранированную '1' на '\d'
+    logging.debug(f"Маска LiteManager ID: '{id_mask}'. Проверка наличия маски в строке.")
 
-    # Добавляем границы слова
-    lm_regex = r'\b(' + lm_regex_pattern + r')\b'
-    logging.debug(f"Маска LiteManager ID: '{id_mask}'. Сгенерированное regex: '{lm_regex}'")
-
-
-    match = re.search(lm_regex, input_string)
-
-    if match:
-        found_id = match.group(1)
-        logging.debug(f"Найден потенциальный LiteManager ID: '{found_id}'")
-        return found_id.strip() # Возвращаем найденный ID (удаляем пробелы по краям, если они были захвачены \b)
+    # Проверяем, содержит ли входная строка указанную маску
+    if id_mask in input_string:
+        logging.debug(f"Найден LiteManager ID: '{input_string}', так как он содержит маску '{id_mask}'")
+        return input_string.strip()
     else:
-        logging.debug("LiteManager ID не найден в строке по заданной маске.")
+        logging.debug(f"LiteManager ID не найден в строке, маска '{id_mask}' отсутствует.")
         return None
 
 def format_version(version_string):
